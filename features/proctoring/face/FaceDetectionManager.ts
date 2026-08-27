@@ -1,0 +1,21 @@
+import { FACE_CONFIG } from './faceConfig';
+import { FaceDetector } from './FaceDetector';
+import type { FaceResult, FaceSnapshot, FaceStatus } from './faceTypes';
+
+type Callbacks = { onUpdate:(snapshot:FaceSnapshot)=>void; onMultipleFaces:(result:FaceResult)=>void; onMultipleFacesResolved:()=>void; onNoFace:(duration:number)=>void; onLookingAway:(duration:number)=>void; onError:()=>void };
+
+/** A single, self-scheduling loop. React renders cannot create a second loop. */
+export class FaceDetectionManager {
+  private detector = new FaceDetector(); private timer:number|undefined; private running=false;
+  private pendingSince:number|undefined; private noFaceSince:number|undefined; private awaySince:number|undefined; private noFaceReported=false; private awayReported=false; private confirmed=false; private lastAt=0; private simulatedCount:number|undefined;
+  constructor(private callbacks:Callbacks) {}
+  async start(video:HTMLVideoElement) { this.stopLoop(); this.running=true; try { await this.detector.initialize(); await this.waitForVideo(video); if(this.running)this.loop(video); } catch { this.running=false; this.callbacks.onError(); } }
+  stop() { this.running=false; this.stopLoop(); this.detector.dispose(); this.pendingSince=undefined; this.noFaceSince=undefined; this.awaySince=undefined; this.confirmed=false; }
+  simulate(count:number|undefined) { this.simulatedCount=count; }
+  getStatus() { return this.running; }
+  private stopLoop(){if(this.timer)window.clearTimeout(this.timer);this.timer=undefined;}
+  private async waitForVideo(video:HTMLVideoElement) { if(video.readyState>=HTMLMediaElement.HAVE_ENOUGH_DATA&&video.videoWidth>0&&video.videoHeight>0)return; await new Promise<void>((resolve,reject)=>{const done=()=>{cleanup();resolve()};const fail=()=>{cleanup();reject(Error())};const cleanup=()=>{video.removeEventListener('canplay',done);video.removeEventListener('loadedmetadata',done);window.clearTimeout(timeout)};video.addEventListener('canplay',done,{once:true});video.addEventListener('loadedmetadata',done,{once:true});const timeout=window.setTimeout(fail,8000);});if(!video.videoWidth||!video.videoHeight)throw Error(); }
+  private async loop(video:HTMLVideoElement) { if(!this.running)return; const loopStarted=performance.now(); try { const result=this.simulatedCount===undefined?await this.detector.detect(video):{faceCount:this.simulatedCount,faces:[],timestamp:Date.now(),processingTimeMs:0,headDirection:'LOOKING_FORWARD' as const,yaw:0,pitch:0,movement:0}; this.process(result); } catch { if(this.running)this.callbacks.onError(); } finally { if(this.running)this.timer=window.setTimeout(()=>this.loop(video),Math.max(0,FACE_CONFIG.detectionIntervalMs-(performance.now()-loopStarted))); } }
+  private process(result:FaceResult) { const now=result.timestamp; let status:FaceStatus=result.faceCount===0?'NO_FACE':result.faceCount===1?'SINGLE_FACE':'MULTIPLE_FACES_PENDING'; if(result.faceCount===0){this.noFaceSince??=now;const duration=now-this.noFaceSince;if(duration>=FACE_CONFIG.noFaceViolationMs&&!this.noFaceReported){this.noFaceReported=true;this.callbacks.onNoFace(duration);}this.emit(result,status,0,duration);return;}this.noFaceSince=undefined;this.noFaceReported=false;if(result.faceCount>=2){this.pendingSince??=now;const pendingMs=now-this.pendingSince;if(pendingMs>=FACE_CONFIG.multipleFaceConfirmationMs){status='MULTIPLE_FACES_CONFIRMED';if(!this.confirmed){this.confirmed=true;this.callbacks.onMultipleFaces(result);}}this.emit(result,status,pendingMs,0);return;}const wasConfirmed=this.confirmed;this.pendingSince=undefined;this.confirmed=false;if(wasConfirmed)this.callbacks.onMultipleFacesResolved();const away=result.headDirection!=='LOOKING_FORWARD';if(away){this.awaySince??=now;const duration=now-this.awaySince;if(duration>=FACE_CONFIG.lookingAwayWarningMs&&!this.awayReported){this.awayReported=true;this.callbacks.onLookingAway(duration);}}else{this.awaySince=undefined;this.awayReported=false;}this.emit(result,status,0,0); }
+  private emit(result:FaceResult,status:FaceStatus,pendingMs:number,noFaceDurationMs:number){const fps=this.lastAt?1000/(result.timestamp-this.lastAt):0;this.lastAt=result.timestamp;this.callbacks.onUpdate({...result,status,pendingMs,fps,noFaceDurationMs});}
+}

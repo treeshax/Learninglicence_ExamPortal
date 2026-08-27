@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin:0; color:#102a43; background:#f5f8fb; font-family: Arial, Helvetica, sans-serif; }
+button, input { font: inherit; }
+button:focus-visible, input:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+.card { @apply rounded-2xl border border-slate-200 bg-white shadow-sm; }
+.btn { @apply inline-flex min-h-12 items-center justify-center rounded-xl px-5 font-bold transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50; }
+.btn-primary { @apply btn bg-blue-700 text-white; }.btn-secondary { @apply btn border border-slate-300 bg-white text-slate-800; }
+.field { @apply mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-slate-900; }

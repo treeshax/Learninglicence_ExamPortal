@@ -1,0 +1,14 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+
+export type ScreenInfo={surface:string;display:string};
+type Props={onStarted:(info:ScreenInfo)=>void;onViolation:(type:'SCREEN_SHARE_STOPPED'|'SCREEN_SHARE_CHANGED'|'INVALID_SCREEN_SHARE')=>void};
+/** getDisplayMedia requires an explicit user gesture; the stream is never uploaded or recorded. */
+export default function ScreenProctor({onStarted,onViolation}:Props){
+ const stream=useRef<MediaStream>();const source=useRef<string>();const stoppingRef=useRef(false);const [state,setState]=useState<'required'|'sharing'|'error'>('required');const [alert,setAlert]=useState('');
+ const stopStream=()=>{stoppingRef.current=true;if(stream.current){stream.current.getTracks().forEach(track=>track.stop());stream.current=undefined;}};
+ const begin=async()=>{try{stopStream();stoppingRef.current=false;const capture=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const track=capture.getVideoTracks()[0];const settings=track.getSettings();const surface=settings.displaySurface??'unknown';if(settings.displaySurface&&surface!=='monitor'){stoppingRef.current=true;capture.getTracks().forEach(item=>item.stop());setAlert(`Current source: ${surface}. Please share your entire screen.`);setState('error');onViolation('INVALID_SCREEN_SHARE');return;}stream.current=capture;source.current=`${surface}:${settings.deviceId??''}`;track.addEventListener('ended',()=>{if(!stoppingRef.current)onViolation('SCREEN_SHARE_STOPPED');},{once:true});const watch=window.setInterval(()=>{if(stoppingRef.current){window.clearInterval(watch);return;}const changed=track.getSettings();const signature=`${changed.displaySurface??'unknown'}:${changed.deviceId??''}`;if(signature!==source.current){window.clearInterval(watch);if(!stoppingRef.current)onViolation('SCREEN_SHARE_CHANGED');}},1000);track.addEventListener('ended',()=>window.clearInterval(watch),{once:true});setState('sharing');onStarted({surface,display:surface==='monitor'?'Entire screen':surface});}catch{setAlert('Screen sharing is required. Please allow it and try again.');setState('error');}};
+ useEffect(()=>()=>stopStream(),[]);
+ if(state==='sharing')return <div className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900">✓ Screen sharing active · Entire screen locked</div>;
+ return <div className="rounded-xl border-2 border-blue-600 bg-blue-50 p-5"><h2 className="text-lg font-bold">Share your entire screen to begin</h2><p className="mt-2 text-sm">Choose <b>Entire Screen</b> in the browser dialog. Window and browser-tab sources are not accepted when the browser reports the source type.</p>{state==='error'&&<p className="mt-2 text-sm font-bold text-red-700">{alert}</p>}<button onClick={begin} className="btn-primary mt-4">Share entire screen</button></div>;
+}
