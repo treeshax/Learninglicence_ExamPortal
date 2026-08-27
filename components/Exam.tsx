@@ -38,6 +38,15 @@ export default function Exam({session,setSession,now,offline,setOffline,finish}:
     }
   },[session,started,terminated,persist,finish]);
 
+  // Terminate on 5 warnings
+  useEffect(()=>{
+    if(!session||!started||terminated||ended.current||session.status==='COMPLETED')return;
+    const warningCount=session.events.filter(e=>e.severity==='warning').length;
+    if(warningCount>=5){
+      endTest('MAX_WARNINGS_REACHED');
+    }
+  },[session,started,terminated,endTest]);
+
   // 20-second per-question timer auto-advance
   useEffect(()=>{
     if(!session||!started||terminated||now-(session.questionStartedAt??now)<20000)return;
@@ -125,7 +134,7 @@ export default function Exam({session,setSession,now,offline,setOffline,finish}:
     {/* Proctoring engines remain mounted and active in background when started */}
     <div className={started ? "hidden" : "mb-6 space-y-4"}>
       <ScreenProctor onStarted={setScreen} onViolation={onScreenViolation}/>
-      <ProctoredCamera sessionId={session.id} onMultipleFaces={recordMultiple} onMultipleFacesResolved={()=>undefined} onFaceMissing={(duration)=>setNotice(`Face not detected for ${(duration/1000).toFixed(1)} seconds.`)} onLookingAway={(duration)=>setNotice(`Please focus on the examination screen. Looking away for ${(duration/1000).toFixed(1)} seconds was detected.`)} onSnapshot={setFace} onDetectorError={()=>setNotice('Face monitoring could not be started.')} onAudioEvent={recordAudio}/>
+      <ProctoredCamera sessionId={session.id} onMultipleFaces={recordMultiple} onMultipleFacesResolved={()=>undefined} onFaceMissing={(duration)=>{setNotice(`Face not detected for ${(duration/1000).toFixed(1)} seconds.`);report('FACE_MISSING');}} onLookingAway={(duration)=>{setNotice(`Please focus on the examination screen. Looking away for ${(duration/1000).toFixed(1)} seconds was detected.`);report('LOOKING_AWAY');}} onSnapshot={setFace} onDetectorError={()=>setNotice('Face monitoring could not be started.')} onAudioEvent={recordAudio}/>
       {!started&&<div className="card p-4 text-sm"><b>LIVE PROCTORING</b><p className="mt-3">Camera: ✓ Connected</p><p>Face: {face?.faceCount===1?'✓ Exactly 1 face':face?.faceCount===0?'⚠ FACE NOT DETECTED':`⚠ ${face?.faceCount??0} faces`}</p><p>FPS: {face?.fps.toFixed(1)??'—'}</p><p>Head: {face?.headDirection?.replaceAll('_',' ')??'Searching'}</p><p>Microphone: ✓ Monitoring</p><p>Screen: {screen?`✓ ${screen.display} · LOCKED`:'⚠ Entire screen required'}</p><p>Fullscreen: {fullscreen?'✓ Active':'⚠ Required'}</p><p>Browser: Waiting for secure start</p><p className="mt-3">{offline?'⚠ Answers saved locally':'✓ Answers synced'}</p><button onClick={()=>setOffline(!offline)} className="mt-3 text-left font-bold text-blue-800">Demo: {offline?'restore connection':'go offline'}</button></div>}
     </div>
 
